@@ -111,8 +111,48 @@ def fetch_all(start="2022-01-01", workers=3, resume=True):
     print(f"saved {OUT}: {c.shape[0]:,} bars × {c.shape[1]} stocks, {c.index[0]} → {c.index[-1]}")
     return panel
 
-def load_15m():
-    return pd.read_pickle(OUT)
+SPLIT_THRESHOLD = 0.25   # a 15-minute bar never moves this much on real trading
+
+def adjust_splits(panel, threshold=SPLIT_THRESHOLD, verbose=True):
+    """Back-adjust for splits and bonus issues.
+
+    Upstox serves RAW candles: a 1:2 split shows up as a genuine-looking -50%
+    bar, which poisons both the training labels and the backtest (it cost one
+    VBL trade -50% in the first full run). Any bar-to-bar move beyond the
+    threshold that is close to a simple ratio (1:2, 1:5, 2:1 …) is treated as a
+    corporate action, and every bar BEFORE it is divided by that ratio so the
+    series becomes continuous — the same convention as an adjusted close.
+    """
+    panel = {k: v.copy() for k, v in panel.items()}
+    c = panel["Close"]
+    r = c.pct_change()
+    fixed = []
+    for sym in c.columns:
+        jumps = r[sym][r[sym].abs() > threshold].dropna()
+        if jumps.empty:
+            continue
+        factor = pd.Series(1.0, index=c.index)
+        for ts, move in jumps.items():
+            ratio = 1 + move
+            # only treat it as a corporate action if it lands near a clean ratio
+            if not any(abs(ratio - t) < 0.06 for t in (0.5, 0.2, 0.1, 0.25, 1/3, 2.0, 5.0, 10.0, 3.0, 4.0)):
+                continue
+            factor.loc[:ts] *= ratio
+            factor.loc[ts] = factor.loc[ts] / ratio  # the jump bar is already post-action
+            fixed.append((sym, ts.date(), round(ratio, 3)))
+        for f in ["Open", "High", "Low", "Close"]:
+            panel[f][sym] = panel[f][sym] * factor
+        panel["Volume"][sym] = panel["Volume"][sym] / factor.replace(0, 1)
+    if verbose and fixed:
+        print("split/bonus adjustments applied:")
+        for sym, d, ratio in fixed:
+            print(f"  {sym} {d} ×{ratio}")
+    return panel
+
+
+def load_15m(adjust=True):
+    panel = pd.read_pickle(OUT)
+    return adjust_splits(panel) if adjust else panel
 
 if __name__ == "__main__":
     fetch_all(sys.argv[1] if len(sys.argv) > 1 else "2022-01-01",
