@@ -10,8 +10,8 @@ B2 by changing only the endpoint. (Firestore is a document store with per-write
 billing; for append-only bar/news blobs it is both slower and more expensive.)
 
 Configure in .env:
-    S3_ENDPOINT_URL=https://<accountid>.r2.cloudflarestorage.com   # omit for AWS S3
-    S3_BUCKET=stockdash
+    S3_ENDPOINT_URL=https://<accountid>.r2.cloudflarestorage.com   # no bucket in the path
+    S3_BUCKET=<bucket name>
     AWS_ACCESS_KEY_ID=...
     AWS_SECRET_ACCESS_KEY=...
 
@@ -35,7 +35,9 @@ def client():
     kw = {}
     if os.getenv("S3_ENDPOINT_URL"):
         kw["endpoint_url"] = os.environ["S3_ENDPOINT_URL"]
-    if os.getenv("S3_REGION"):
+        # R2 has no regions but boto3 insists on one; "auto" is what R2 expects.
+        kw["region_name"] = os.getenv("S3_REGION", "auto")
+    elif os.getenv("S3_REGION"):
         kw["region_name"] = os.environ["S3_REGION"]
     return boto3.client("s3", **kw)
 
