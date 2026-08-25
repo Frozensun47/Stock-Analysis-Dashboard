@@ -51,32 +51,71 @@ cp .env.example .env      # then paste your Upstox access token
 
 ## What the 15-minute model actually found
 
-A rank-IC sweep over prediction horizons (out-of-sample, walk-forward) settled the
-design. The edge is real but small, and it only clears trading costs once the
-holding period spans days:
+Measured on 3.5 years of Upstox 15-minute bars (22,476 bars × 124 stocks),
+walk-forward, out-of-sample from Oct 2024 to Aug 2026 (1.81 years).
 
-| Horizon | rank-IC | t | Top-decile fwd return (gross) |
+**The benchmark that matters:** holding the equal-weight universe over the same
+window returned **+10.2% total, +5.5% CAGR** with zero trading. Any strategy has
+to beat that after costs, or it is an expensive way to buy the market.
+
+| | net per trade | trades | Sharpe | CAGR |
+|---|---|---|---|---|
+| Buy & hold equal-weight | — | 0 | — | +5.5% |
+| Rule: RSI<35 above SMA78 | -0.272% | 3,129 | -4.33 | loses |
+| ML, first version | +0.004% | 2,692 | 0.04 | flat |
+| **ML, current** | **+0.201%** | **605** | **1.04** | **+12.7%** |
+
+Three findings drove the difference between "flat" and "beats the market":
+
+**1. The alpha is far smaller than it looks.** Demeaning each bar's forward
+returns cross-sectionally — subtracting what the whole universe did — separates
+stock selection from market drift:
+
+| Horizon | Universe drift | Top decile raw | Top decile **alpha** |
 |---|---|---|---|
-| 4 bars (1h) | +0.003 | 0.5 | +0.04% |
-| 8 bars (2h) | +0.015 | 2.7 | +0.03% |
-| 25 bars (1 session) | +0.033 | 6.8 | +0.33% |
-| 50 bars (2 sessions) | +0.040 | 7.7 | +0.60% |
-| 100 bars (4 sessions) | +0.031 | 5.4 | +1.03% |
+| 1 session | +0.027% | +0.337% | +0.034% |
+| 8 sessions | +0.204% | +0.990% | +0.121% |
+| 15 sessions | +0.425% | +0.953% | +0.197% |
 
-At a 2-hour horizon the top decile earns 3bps gross against ~15bps of intraday
-costs — a guaranteed loser, and the intraday backtest confirmed it (-0.17%/trade).
-So the model keeps the *15-minute features* (VWAP deviation, intraday range
-position, time-of-day, volume surge) but predicts a **4-session** forward return.
+Most of the top decile's return is beta. Real stock-selection edge peaks around
++0.20% — still below the 0.348% round-trip cost. **Cost, not signal, is the
+binding constraint.**
 
-Trailing stops were swept at 1.5/2.5/4/6% and none: every stop width reduced
-returns (1.5% trail → -0.19%/trade; no stop → +0.22%/trade, Sharpe 1.09), so the
-horizon exit alone is what the evidence supports.
+**2. So turnover is the main lever.** Trading every bar pays 0.348% to harvest at
+most 0.12%. Rebalancing once per session instead cut turnover ~25× and took the
+strategy from flat to profitable. Fewer, longer, higher-conviction trades.
 
-**Caveat:** those numbers come from ~3 months of yfinance 15m data, which is all
-that free API serves. The Upstox pipeline exists to re-run this on multi-year
-history — treat the single-quarter result as directional, not validated.
+**3. Cross-sectional rank features earn their place.** In a ranking problem what
+matters is a stock's value *relative to the universe right now*, not its absolute
+level. Adding per-bar percentile ranks alongside the raw features flipped
+out-of-sample rank-IC from -0.002 to +0.004 and net return from -0.011%/trade to
++0.070%/trade. Ranks *instead of* raw values did worse — both are needed.
 
-## Configuration
+Things that were tested and **did not** work, kept here so they are not retried:
+
+- **Intraday horizons.** At 2 hours the top decile earns 3bps gross against 15bps
+  of costs. Structurally unprofitable; the backtest confirmed -0.17%/trade.
+- **Trailing stops**, swept at 1.5/2.5/4/6%. Every width reduced returns versus a
+  plain horizon exit (1.5% trail → -0.19%/trade).
+- **Long-short.** The shorted bottom decile *rose* +0.16% over the holding
+  period — the model separates high-volatility names from low-volatility ones,
+  not winners from losers. Adding the short leg doubled costs and took
+  -0.23%/trade to -0.37%/trade.
+- **Long-lookback momentum / relative-strength features.** They raise average
+  rank-IC (+0.0065, t=5.5) but halve the decile spread and turn net return
+  sharply negative — better mid-distribution ordering, worse extreme picks.
+
+### Honest limitations
+
+- The out-of-sample window is **1.81 years and 605 trades**. Suggestive, not proven.
+- The edge is **fragile in width**: top-5 returns +12.7% CAGR, but top-10 at a
+  lower threshold *loses* (-6.8% CAGR). A result that flips sign with a mild
+  parameter change is not yet robust.
+- Win rate is 47.8% — profit comes from asymmetry, not accuracy, and the worst
+  single trade was -15.4%.
+- Costs are modelled at a flat 0.348% with no market-impact or slippage term.
+
+## Configuration## Configuration
 
 `UPSTOX_ACCESS_TOKEN` is read from `.env` locally, or from Streamlit secrets /
 environment variables when deployed. **It is never committed** — `.env` is git-ignored.

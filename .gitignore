@@ -8,3 +8,5 @@ cache/
 portfolio.json
 .streamlit/secrets.toml
 .DS_Store
+scratch_*
+*.log

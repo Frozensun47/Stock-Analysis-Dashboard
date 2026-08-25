@@ -9,3 +9,93 @@ panel (22476, 124)
     @bar 13238/22476 rows=1,562,777
     @bar 14238/22476 rows=1,686,684
     @bar 15238/22476 rows=1,810,684
+    @bar 16238/22476 rows=1,934,673
+    @bar 17238/22476 rows=2,058,666
+    @bar 18238/22476 rows=2,182,579
+    @bar 19238/22476 rows=2,306,575
+    @bar 20238/22476 rows=2,430,566
+    @bar 21238/22476 rows=2,554,477
+    @bar 22238/22476 rows=2,678,470
+
+== A baseline (15 raw) ==
+  rank-IC mean=-0.0020 t=-1.64 (n_bars=11138)  decile spread=+0.039%
+  net top-5 pred>1.0%: n=2817  win= 48.6%  avg=-0.0113%  sum=   -31.8  worst=-59.54  sharpe=-0.12
+
+### B baseline + CS-ranks of baseline · 28 features
+    @bar 11238/22476 rows=1,314,918
+    @bar 12238/22476 rows=1,438,872
+    @bar 13238/22476 rows=1,562,777
+    @bar 14238/22476 rows=1,686,684
+    @bar 15238/22476 rows=1,810,684
+    @bar 16238/22476 rows=1,934,673
+    @bar 17238/22476 rows=2,058,666
+    @bar 18238/22476 rows=2,182,579
+    @bar 19238/22476 rows=2,306,575
+    @bar 20238/22476 rows=2,430,566
+    @bar 21238/22476 rows=2,554,477
+    @bar 22238/22476 rows=2,678,470
+
+== B baseline + CS-ranks of baseline ==
+  rank-IC mean=+0.0038 t=+3.12 (n_bars=11138)  decile spread=+0.070%
+  net top-5 pred>1.0%: n=3155  win= 49.5%  avg=+0.0704%  sum=  +222.3  worst=-59.79  sharpe=0.84
+
+### C CS-ranks only (all feats) · 27 features
+    @bar 11238/22476 rows=1,314,495
+    @bar 12238/22476 rows=1,438,449
+    @bar 13238/22476 rows=1,561,931
+    @bar 14238/22476 rows=1,685,727
+    @bar 15238/22476 rows=1,809,415
+    @bar 16238/22476 rows=1,933,404
+    @bar 17238/22476 rows=2,057,397
+    @bar 18238/22476 rows=2,181,303
+    @bar 19238/22476 rows=2,304,883
+    @bar 20238/22476 rows=2,428,874
+    @bar 21238/22476 rows=2,552,362
+    @bar 22238/22476 rows=2,676,355
+
+== C CS-ranks only (all feats) ==
+  rank-IC mean=+0.0025 t=+2.09 (n_bars=11138)  decile spread=+0.064%
+  net top-5 pred>1.0%: n=2551  win= 47.0%  avg=-0.1456%  sum=  -371.3  worst=-61.60  sharpe=-1.62
+
+### D full: raw+new+all CS-ranks · 52 features
+    @bar 11238/22476 rows=1,314,495
+    @bar 12238/22476 rows=1,438,449
+    @bar 13238/22476 rows=1,561,931
+    @bar 14238/22476 rows=1,685,727
+    @bar 15238/22476 rows=1,809,415
+    @bar 16238/22476 rows=1,933,404
+    @bar 17238/22476 rows=2,057,397
+    @bar 18238/22476 rows=2,181,303
+    @bar 19238/22476 rows=2,304,883
+    @bar 20238/22476 rows=2,428,874
+    @bar 21238/22476 rows=2,552,362
+    @bar 22238/22476 rows=2,676,355
+
+== D full: raw+new+all CS-ranks ==
+  rank-IC mean=+0.0065 t=+5.47 (n_bars=11138)  decile spread=+0.033%
+  net top-5 pred>1.0%: n=2487  win= 45.8%  avg=-0.1282%  sum=  -318.8  worst=-60.56  sharpe=-1.38
+
+### E new raw + CS-ranks (no base raw) · 39 features
+    @bar 11238/22476 rows=1,314,495
+    @bar 12238/22476 rows=1,438,449
+    @bar 13238/22476 rows=1,561,931
+    @bar 14238/22476 rows=1,685,727
+    @bar 15238/22476 rows=1,809,415
+    @bar 16238/22476 rows=1,933,404
+    @bar 17238/22476 rows=2,057,397
+    @bar 18238/22476 rows=2,181,303
+    @bar 19238/22476 rows=2,304,883
+    @bar 20238/22476 rows=2,428,874
+    @bar 21238/22476 rows=2,552,362
+    @bar 22238/22476 rows=2,676,355
+
+== E new raw + CS-ranks (no base raw) ==
+  rank-IC mean=+0.0061 t=+5.09 (n_bars=11138)  decile spread=+0.040%
+  net top-5 pred>1.0%: n=2446  win= 46.4%  avg=-0.2078%  sum=  -508.2  worst=-58.11  sharpe=-2.22
+
+===== SUMMARY =====
+A baseline (15 raw)                      IC=-0.0020 t=-1.64 spread=+0.039% net/trade=-0.0113%
+B baseline + CS-ranks of baseline        IC=+0.0038 t=+3.12 spread=+0.070% net/trade=+0.0704%
+C CS-ranks only (all feats)              IC=+0.0025 t=+2.09 spread=+0.064% net/trade=-0.1456%
+D full: raw+new+all CS-ranks             IC=+0.0065 t=+5.47 spread=+0.033% net/trade=-0.1282%
+E new raw + CS-ranks (no base raw)       IC=+0.0061 t=+5.09 spread=+0.040% net/trade=-0.2078%

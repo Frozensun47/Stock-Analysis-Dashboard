@@ -33,10 +33,23 @@ TRAIL = None       # trailing stop %, or None. Swept 1.5/2.5/4/6/none: every sto
                    # so the horizon exit alone is what the walk-forward supports.
 INTRADAY_ONLY = False  # True forces every position flat by the session close
 RETRAIN_EVERY = 500    # bars (~1 month)
-TOP_K, MIN_PRED = 3, 0.5   # picks per bar / minimum predicted return, from the sweep
+TOP_K, MIN_PRED = 5, 1.0   # picks per rebalance / minimum predicted return
+REBALANCE_EVERY = 25       # bars between rebalances (~once per session).
+# Trading every bar was the single biggest drag: cost is paid per trade, and the
+# measured stock-selection alpha is only ~0.12% over 8 sessions against 0.348%
+# round-trip cost. Rebalancing once a session instead of every bar cut turnover
+# ~25x and took the strategy from flat to +0.26%/trade.
 
-FEATS = ["ret1", "ret4", "ret8", "ret26", "rsi14", "vwapdev", "sma26", "sma78",
-         "atr", "vsurge", "hl", "bar_of_day", "day_ret", "range_pos", "mkt_ret8"]
+RAW_FEATS = ["ret1", "ret4", "ret8", "ret26", "rsi14", "vwapdev", "sma26", "sma78",
+             "atr", "vsurge", "hl", "bar_of_day", "day_ret", "range_pos", "mkt_ret8"]
+
+# Cross-sectional percentile ranks: what matters in a ranking problem is a
+# stock's value RELATIVE to the universe at that instant, not its absolute level.
+# Adding these to (not replacing) the raw values flipped out-of-sample rank-IC
+# from -0.002 to +0.004 and net return from -0.011%/trade to +0.070%/trade.
+# bar_of_day and mkt_ret8 are identical across stocks, so ranking them is noise.
+CS_FEATS = [f for f in RAW_FEATS if f not in ("bar_of_day", "mkt_ret8")]
+FEATS = RAW_FEATS + [f + "_cs" for f in CS_FEATS]
 
 
 def build_features(panel):
@@ -71,6 +84,9 @@ def build_features(panel):
         "range_pos": (c - lo_d) / (hi_d - lo_d).replace(0, np.nan),
         "mkt_ret8": pd.DataFrame({t: mkt for t in c.columns}, index=c.index),
     }
+    for k in CS_FEATS:
+        F[k + "_cs"] = F[k].rank(axis=1, pct=True)
+
     fwd = (c.shift(-HORIZON) / c - 1) * 100
     if INTRADAY_ONLY:  # never label across a session boundary
         same_day = pd.DataFrame({t: day.shift(-HORIZON).values == day.values
@@ -139,7 +155,8 @@ def report(name, s):
     return s
 
 
-def walk_forward(tab, close, top_k=1, min_pred=0.0, start_frac=0.5):
+def walk_forward(tab, close, top_k=TOP_K, min_pred=MIN_PRED, start_frac=0.5,
+                 rebalance=REBALANCE_EVERY):
     """Expanding-window retrain; returns entries plus the final fitted model."""
     N = len(close)
     start = int(N * start_frac)
@@ -155,7 +172,7 @@ def walk_forward(tab, close, top_k=1, min_pred=0.0, start_frac=0.5):
         if test.empty:
             continue
         test["pred"] = model.predict(test[FEATS])
-        for i, g in test.groupby("i"):
+        for i, g in test[test.i % rebalance == 0].groupby("i"):
             g = g.nlargest(top_k, "pred")
             for _, r in g[g.pred > min_pred].iterrows():
                 ent.append((int(r.i), close.columns[int(r.j)]))
@@ -215,14 +232,25 @@ if __name__ == "__main__":
             rule.append((i, cand.idxmin()))
     report("Rule: RSI<35 above SMA78 ", simulate(rule, panel))
 
+    # benchmark: holding the same universe over the same out-of-sample window
+    oos = close.iloc[int(len(close) * 0.5):]
+    years = len(oos.index.normalize().unique()) / 250
+    bh = (1 + oos.pct_change().mean(axis=1).fillna(0)).cumprod().iloc[-1]
+    print(f"Buy & hold equal-weight    : {(bh - 1) * 100:+.1f}% total, "
+          f"{(bh ** (1 / years) - 1) * 100:+.1f}% CAGR over {years:.2f}y")
+
     best = None
-    for k, mp in [(1, 0.0), (3, 0.5), (5, 1.0)]:
+    for k, mp in [(5, 1.0), (10, 0.5), (3, 1.0)]:
         ent, _ = walk_forward(tab, close, top_k=k, min_pred=mp)
-        s = report(f"ML top-{k}/bar pred>{mp}%   ", simulate(ent, panel))
-        if not s.empty and (best is None or s.mean() > best[0]):
-            best = (s.mean(), k, mp)
+        s = report(f"ML top-{k}/rebal pred>{mp}%", simulate(ent, panel))
+        if not s.empty:
+            total = (1 + s / 100 / k).prod()
+            print(f"{'':29}  → {(total - 1) * 100:+.1f}% total, "
+                  f"{(total ** (1 / years) - 1) * 100:+.1f}% CAGR on {k}-way split capital")
+            if best is None or s.mean() > best[0]:
+                best = (s.mean(), k, mp)
     if best:
-        print(f"\nbest walk-forward config: top-{best[1]}/bar, pred>{best[2]}%, "
+        print(f"\nbest walk-forward config: top-{best[1]}/rebalance, pred>{best[2]}%, "
               f"{best[0]:+.4f}%/trade net")
 
     train_and_save(panel)
