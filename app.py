@@ -5,9 +5,13 @@ import plotly.graph_objects as go
 from engine import (fetch_prices, scan, backtest, load_port, save_port, buy,
                     evaluate, news_for, DEFAULT_WEIGHTS)
 
+# Streamlit secrets -> environment, so the data modules (which read os.getenv
+# and a local .env) work unchanged when deployed. Only scalars are copied;
+# st.secrets raises if no secrets file exists at all, hence the guard.
 try:
-    if "UPSTOX_ACCESS_TOKEN" in st.secrets:
-        os.environ.setdefault("UPSTOX_ACCESS_TOKEN", st.secrets["UPSTOX_ACCESS_TOKEN"])
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, (str, int, float, bool)):
+            os.environ.setdefault(_k, str(_v))
 except Exception:
     pass
 
