@@ -1,0 +1,60 @@
+name: Daily data sync
+
+on:
+  schedule:
+    - cron: "30 14 * * 1-5"   # 20:00 IST, weekdays (after the NSE close)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt boto3
+
+      # Warm-start from object storage so the corpus accumulates across runs
+      # instead of restarting empty each day.
+      - name: Pull existing corpus
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: python storage.py pull || echo "no corpus yet — starting fresh"
+
+      - name: Collect 1-minute bars
+        run: python bars_db.py sync 2 && python bars_db.py stats
+
+      - name: Collect news
+        run: python news_db.py sync && python news_db.py stats
+
+      # Statements change quarterly — refresh weekly, not daily.
+      - name: Collect fundamentals (Fridays and manual runs)
+        run: |
+          if [ "$(date -u +%u)" = "5" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python fundamentals.py sync && python fundamentals.py stats
+          else
+            echo "skipping fundamentals (not Friday)"
+          fi
+
+      - name: Push corpus to object storage
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: python storage.py push
+
+      - name: Upload as artifact (fallback when no object storage is configured)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ github.run_number }}
+          path: cache/*.sqlite
+          retention-days: 14
+          if-no-files-found: ignore

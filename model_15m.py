@@ -20,10 +20,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "cache")
 MODEL_PATH = os.path.join(CACHE, "model_15m.joblib")
 
-COST = 0.15        # % round trip, intraday
-HORIZON = 8        # bars (~2 hours)
-TRAIL = 0.8        # % trailing stop on 15m closes
-RETRAIN_EVERY = 500  # bars (~1 month of 25 bars/day)
+# Calibration note (see the horizon sweep in the README): a rank-IC sweep over
+# 4/8/16/25/50/100/175 bars showed intraday horizons carry a real but tiny edge
+# (top-decile +0.03% gross at 8 bars) that costs eat several times over. The edge
+# only clears costs once the holding period spans days, so the model keeps the
+# 15-minute FEATURES (VWAP deviation, intraday range position, time-of-day) and
+# predicts a MULTI-DAY forward return.
+COST = 0.348       # % round trip (delivery brokerage + STT + slippage, overnight hold)
+HORIZON = 100      # bars ≈ 4 trading sessions (25 bars/session)
+TRAIL = None       # trailing stop %, or None. Swept 1.5/2.5/4/6/none: every stop
+                   # width cut returns (1.5% trail → -0.19%/trade, none → +0.22%),
+                   # so the horizon exit alone is what the walk-forward supports.
+INTRADAY_ONLY = False  # True forces every position flat by the session close
+RETRAIN_EVERY = 500    # bars (~1 month)
+TOP_K, MIN_PRED = 3, 0.5   # picks per bar / minimum predicted return, from the sweep
 
 FEATS = ["ret1", "ret4", "ret8", "ret26", "rsi14", "vwapdev", "sma26", "sma78",
          "atr", "vsurge", "hl", "bar_of_day", "day_ret", "range_pos", "mkt_ret8"]
@@ -62,9 +72,10 @@ def build_features(panel):
         "mkt_ret8": pd.DataFrame({t: mkt for t in c.columns}, index=c.index),
     }
     fwd = (c.shift(-HORIZON) / c - 1) * 100
-    # no label across a session boundary
-    same_day = pd.DataFrame({t: day.shift(-HORIZON).values == day.values for t in c.columns}, index=c.index)
-    fwd = fwd.where(same_day)
+    if INTRADAY_ONLY:  # never label across a session boundary
+        same_day = pd.DataFrame({t: day.shift(-HORIZON).values == day.values
+                                 for t in c.columns}, index=c.index)
+        fwd = fwd.where(same_day)
     return F, fwd
 
 
@@ -83,34 +94,39 @@ def flatten(F, fwd, close, warmup=80):
 
 
 def simulate(entries, panel, trail=TRAIL, horizon=HORIZON):
-    """entries: (signal_bar_i, ticker). Enter next bar's open, trail-stop on
-    closes, exit by horizon or at the session's last bar, whichever comes first."""
+    """entries: (signal_bar_i, ticker). Enter at the NEXT bar's open, trailing stop
+    on 15m closes, exit at the horizon (or the session close if INTRADAY_ONLY)."""
     c, o = panel["Close"], panel["Open"]
     day = c.index.normalize()
     last_bar_of_day = pd.Series(day).groupby(day).transform(lambda s: s.index[-1]).values
     cv, ov, N = c.values, o.values, len(c)
     cols = {t: k for k, t in enumerate(c.columns)}
-    rets = []
-    for i, t in entries:
+    rets, busy_until = [], {}
+    for i, t in sorted(entries):
+        if i < busy_until.get(t, -1):   # no pyramiding / overlapping trades
+            continue
         j = cols[t]
         if i + 1 >= N:
             continue
         e = ov[i + 1, j]
         if not np.isfinite(e) or e <= 0:
             continue
-        peak, ep = e, None
-        stop_at = min(i + horizon, int(last_bar_of_day[i]), N - 1)
+        peak, ep, k = e, None, i + 1
+        stop_at = min(i + horizon, N - 1)
+        if INTRADAY_ONLY:
+            stop_at = min(stop_at, int(last_bar_of_day[i]))
         for k in range(i + 1, stop_at + 1):
             px = cv[k, j]
             if not np.isfinite(px):
                 continue
-            if px <= peak * (1 - trail / 100):
+            if trail is not None and px <= peak * (1 - trail / 100):
                 ep = px; break
             peak = max(peak, px)
         if ep is None:
             ep = cv[stop_at, j]
             if not np.isfinite(ep):
                 continue
+        busy_until[t] = k if ep is not None else stop_at
         rets.append((ep / e - 1) * 100 - COST)
     return pd.Series(rets, dtype=float)
 
@@ -185,8 +201,10 @@ if __name__ == "__main__":
     tab = flatten(F, fwd, close)
     print(f"feature table: {len(tab):,} rows")
 
-    print(f"\n=== Walk-forward, 15m execution, {COST}% round-trip cost, {TRAIL}% trail, {HORIZON}-bar horizon ===")
-    # baseline: intraday mean-reversion rule (RSI dip within uptrend)
+    print(f"\n=== Walk-forward · {HORIZON}-bar (~{HORIZON/25:.1f} session) horizon · "
+          f"{COST}% round-trip cost · trail={TRAIL} ===")
+
+    # baseline: the same mean-reversion rule the daily strategy uses, on 15m bars
     rsi_, sma = F["rsi14"], F["sma78"]
     N = len(close); start = int(N * 0.5)
     rule = []
@@ -197,9 +215,15 @@ if __name__ == "__main__":
             rule.append((i, cand.idxmin()))
     report("Rule: RSI<35 above SMA78 ", simulate(rule, panel))
 
-    for k, mp in [(1, 0.0), (1, 0.1), (3, 0.1)]:
+    best = None
+    for k, mp in [(1, 0.0), (3, 0.5), (5, 1.0)]:
         ent, _ = walk_forward(tab, close, top_k=k, min_pred=mp)
-        report(f"ML top-{k}/bar pred>{mp}%   ", simulate(ent, panel))
+        s = report(f"ML top-{k}/bar pred>{mp}%   ", simulate(ent, panel))
+        if not s.empty and (best is None or s.mean() > best[0]):
+            best = (s.mean(), k, mp)
+    if best:
+        print(f"\nbest walk-forward config: top-{best[1]}/bar, pred>{best[2]}%, "
+              f"{best[0]:+.4f}%/trade net")
 
     train_and_save(panel)
     print("\nLive top picks:\n", live_signals(panel).to_string(index=False))

@@ -49,6 +49,33 @@ cp .env.example .env      # then paste your Upstox access token
 .venv/bin/streamlit run app.py
 ```
 
+## What the 15-minute model actually found
+
+A rank-IC sweep over prediction horizons (out-of-sample, walk-forward) settled the
+design. The edge is real but small, and it only clears trading costs once the
+holding period spans days:
+
+| Horizon | rank-IC | t | Top-decile fwd return (gross) |
+|---|---|---|---|
+| 4 bars (1h) | +0.003 | 0.5 | +0.04% |
+| 8 bars (2h) | +0.015 | 2.7 | +0.03% |
+| 25 bars (1 session) | +0.033 | 6.8 | +0.33% |
+| 50 bars (2 sessions) | +0.040 | 7.7 | +0.60% |
+| 100 bars (4 sessions) | +0.031 | 5.4 | +1.03% |
+
+At a 2-hour horizon the top decile earns 3bps gross against ~15bps of intraday
+costs — a guaranteed loser, and the intraday backtest confirmed it (-0.17%/trade).
+So the model keeps the *15-minute features* (VWAP deviation, intraday range
+position, time-of-day, volume surge) but predicts a **4-session** forward return.
+
+Trailing stops were swept at 1.5/2.5/4/6% and none: every stop width reduced
+returns (1.5% trail → -0.19%/trade; no stop → +0.22%/trade, Sharpe 1.09), so the
+horizon exit alone is what the evidence supports.
+
+**Caveat:** those numbers come from ~3 months of yfinance 15m data, which is all
+that free API serves. The Upstox pipeline exists to re-run this on multi-year
+history — treat the single-quarter result as directional, not validated.
+
 ## Configuration
 
 `UPSTOX_ACCESS_TOKEN` is read from `.env` locally, or from Streamlit secrets /
