@@ -111,7 +111,9 @@ def fetch_all(start="2022-01-01", workers=3, resume=True):
     print(f"saved {OUT}: {c.shape[0]:,} bars × {c.shape[1]} stocks, {c.index[0]} → {c.index[-1]}")
     return panel
 
-SPLIT_THRESHOLD = 0.25   # a 15-minute bar never moves this much on real trading
+SPLIT_THRESHOLD = 0.25    # a 15-minute bar never moves this much on real trading
+DEMERGER_THRESHOLD = 0.30 # overnight gap this large is a corporate action, not a crash
+BLANK_BARS = 120          # bars blanked either side of an unadjustable action
 
 def adjust_splits(panel, threshold=SPLIT_THRESHOLD, verbose=True):
     """Back-adjust for splits and bonus issues.
@@ -147,6 +149,35 @@ def adjust_splits(panel, threshold=SPLIT_THRESHOLD, verbose=True):
         print("split/bonus adjustments applied:")
         for sym, d, ratio in fixed:
             print(f"  {sym} {d} ×{ratio}")
+
+    # Demergers cannot be back-adjusted by a ratio — the company genuinely
+    # changed shape. Neither Upstox nor Yahoo adjusts them, so Vedanta's April
+    # 2026 demerger reads as a -65% four-day "return". Rather than invent a
+    # factor, blank a window around each event so it cannot become a label or a
+    # trade. Real crashes (Adani/Hindenburg 2023) fall over several sessions and
+    # are deliberately left intact — only single overnight gaps are treated as
+    # corporate actions.
+    c = panel["Close"]
+    blanked = []
+    for sym in c.columns:
+        # per-symbol, on the observed bars only: a halted or late-opening session
+        # leaves NaNs that would otherwise hide the gap (Vedanta's demerger day
+        # opened at 10:00, so the 09:45 slot was empty and pct_change returned NaN)
+        s_ = c[sym].dropna()
+        if s_.empty:
+            continue
+        d_ = s_.index.normalize()
+        gap = s_.pct_change()[d_ != pd.Series(d_).shift(1).values]
+        for ts in gap[gap.abs() > DEMERGER_THRESHOLD].dropna().index:
+            k = c.index.get_loc(ts)
+            lo, hi = max(0, k - BLANK_BARS), min(len(c) - 1, k + BLANK_BARS)
+            for f in ["Open", "High", "Low", "Close", "Volume"]:
+                panel[f].iloc[lo:hi + 1, panel[f].columns.get_loc(sym)] = float("nan")
+            blanked.append((sym, ts.date(), round(gap.loc[ts] * 100, 1)))
+    if verbose and blanked:
+        print("unadjustable corporate actions — window blanked:")
+        for sym, d, mv in blanked:
+            print(f"  {sym} {d} ({mv:+.1f}% overnight gap)")
     return panel
 
 
