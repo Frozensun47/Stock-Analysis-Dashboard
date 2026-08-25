@@ -26,8 +26,9 @@ data = fetch_prices()
 close = data["Close"]
 st.caption(f"Data through **{close.index[-1].date()}** · {close.shape[1]} stocks · cached ≤30 min")
 
-tab_scan, tab_intra, tab_port, tab_bt, tab_news = st.tabs(
-    ["🔍 Scanner", "⚡ Intraday 15m", "💰 Virtual Portfolio", "🧪 Backtest", "📰 News"])
+tab_scan, tab_intra, tab_port, tab_bt, tab_news, tab_corpus, tab_fund = st.tabs(
+    ["🔍 Scanner", "⚡ 15m Model", "💰 Virtual Portfolio", "🧪 Backtest",
+     "📰 News", "🗞️ News Corpus", "📑 Fundamentals"])
 
 # ---- scanner ----
 with tab_scan:
@@ -147,3 +148,85 @@ with tab_intra:
                 "with UPSTOX_ACCESS_TOKEN set to download it.")
     except Exception as e:
         st.error(f"Intraday tab unavailable: {e}")
+
+
+# ---- collected news corpus (SQLite, refreshed daily) ----
+with tab_corpus:
+    st.subheader("News corpus")
+    st.caption("Keyless RSS: Google News per symbol plus Moneycontrol, Economic Times, "
+               "Livemint, Business Standard, BusinessLine, Zerodha and Trendlyne. "
+               "Sentiment is a negation-aware finance lexicon, not a language model.")
+    try:
+        import news_db as ND
+        con = ND.connect()
+        n, nsym, tmax = con.execute("SELECT COUNT(*), COUNT(DISTINCT symbol), MAX(ts) FROM news").fetchone()
+        if not n:
+            st.info("Corpus is empty — run `python news_db.py sync`.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Articles", f"{n:,}")
+            c2.metric("Symbols covered", nsym)
+            c3.metric("Latest article", pd.to_datetime(tmax, unit="s").strftime("%d %b %H:%M"))
+
+            syms = [r[0] for r in con.execute(
+                "SELECT symbol, COUNT(*) c FROM news GROUP BY symbol ORDER BY c DESC")]
+            sym = st.selectbox("Symbol", syms, key="corpsym")
+            days = st.slider("Look back (days)", 1, 90, 30, key="corpdays")
+            arts = pd.read_sql(
+                "SELECT ts, title, source, sentiment, link FROM news "
+                "WHERE symbol=? AND ts > strftime('%s','now',?) ORDER BY ts DESC",
+                con, params=(sym, f"-{days} days"))
+            if arts.empty:
+                st.info("No articles in that window.")
+            else:
+                arts["when"] = pd.to_datetime(arts.ts, unit="s").dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+                d1, d2 = st.columns(2)
+                d1.metric("Articles", len(arts))
+                d2.metric("Mean sentiment", f"{arts.sentiment.mean():+.2f}")
+                daily = arts.set_index("when").sentiment.resample("D").agg(["mean", "count"]).dropna()
+                if len(daily) > 1:
+                    fg = go.Figure(go.Bar(x=daily.index, y=daily["mean"],
+                                          marker_color=["#2e7d32" if v >= 0 else "#c62828" for v in daily["mean"]]))
+                    fg.update_layout(height=220, margin=dict(t=10, b=10), yaxis_title="daily sentiment")
+                    st.plotly_chart(fg, use_container_width=True)
+                for _, r in arts.head(40).iterrows():
+                    tone = "🟢" if r.sentiment > 0.1 else ("🔴" if r.sentiment < -0.1 else "⚪")
+                    st.markdown(f"{tone} **[{r.title}]({r.link})** · *{r.source}* · "
+                                f"{r.when:%d %b %H:%M} · `{r.sentiment:+.2f}`")
+        con.close()
+    except Exception as e:
+        st.error(f"News corpus unavailable: {e}")
+
+# ---- fundamentals ----
+with tab_fund:
+    st.subheader("Financial statements")
+    st.caption("Annual and quarterly statements plus ratio snapshots, collected from yfinance.")
+    try:
+        import fundamentals as FU
+        con = FU.connect()
+        syms = [r[0] for r in con.execute("SELECT DISTINCT symbol FROM statements ORDER BY symbol")]
+        con.close()
+        if not syms:
+            st.info("No fundamentals yet — run `python fundamentals.py sync`.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            sym = c1.selectbox("Symbol", syms, key="fundsym")
+            which = c2.selectbox("Statement", ["income", "balance", "cashflow"], key="fundwhich")
+            freq = c3.selectbox("Frequency", ["A", "Q"], key="fundfreq",
+                                format_func=lambda x: "Annual" if x == "A" else "Quarterly")
+            m = FU.metrics_frame([sym])
+            if not m.empty:
+                row = m.iloc[0]
+                cols = st.columns(5)
+                for col, k in zip(cols, ["trailingPE", "priceToBook", "returnOnEquity",
+                                         "debtToEquity", "profitMargins"]):
+                    v = row.get(k)
+                    col.metric(k, "—" if pd.isna(v) else f"{v:,.2f}")
+            df = FU.statement(sym, which, freq)
+            if df.empty:
+                st.info("No rows for that combination.")
+            else:
+                st.dataframe((df / 1e7).round(1).rename_axis("₹ crore"), use_container_width=True, height=520)
+                st.caption("Values in ₹ crore (raw values ÷ 10⁷); per-share items are scaled too.")
+    except Exception as e:
+        st.error(f"Fundamentals unavailable: {e}")
