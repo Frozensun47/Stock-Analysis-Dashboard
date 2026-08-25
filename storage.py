@@ -41,11 +41,16 @@ def client():
         kw["region_name"] = os.environ["S3_REGION"]
     return boto3.client("s3", **kw)
 
-def _files(patterns=("*.sqlite", "*.pkl")):
+# upstox_15m_partial.sqlite is the fetcher's resume scratch file — it duplicates
+# upstox_15m.pkl at 1.5x the size and is worthless on any other machine.
+SKIP = ("upstox_15m_partial.sqlite",)
+
+def _files(patterns=("*.sqlite", "*.pkl", "*.joblib")):
+    """The .joblib is the trained model — the deployed app needs it to serve picks."""
     out = []
     for p in patterns:
         out += sorted(glob.glob(os.path.join(CACHE, p)))
-    return out
+    return [f for f in out if os.path.basename(f) not in SKIP]
 
 def push():
     """Checkpoint WAL first so the uploaded .sqlite is self-contained."""
