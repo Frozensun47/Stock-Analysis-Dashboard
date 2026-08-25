@@ -85,9 +85,9 @@ configured in your Upstox account.
 
 ## Deploy
 
-Streamlit Community Cloud: point it at this repo and `app.py`, then add
-`UPSTOX_ACCESS_TOKEN` under *Settings → Secrets*. A `Dockerfile` is included for
-any container host (Fly.io, Render, Cloud Run).
+See **[DEPLOY.md](DEPLOY.md)** for Streamlit Community Cloud, Docker and Fly.io,
+including how the deployed app gets its data (it reads the corpus from R2 that
+the nightly GitHub Action writes).
 
 ## Disclaimer
 
