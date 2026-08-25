@@ -1,8 +1,15 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from engine import (fetch_prices, scan, backtest, load_port, save_port, buy,
                     evaluate, news_for, DEFAULT_WEIGHTS)
+
+try:
+    if "UPSTOX_ACCESS_TOKEN" in st.secrets:
+        os.environ.setdefault("UPSTOX_ACCESS_TOKEN", st.secrets["UPSTOX_ACCESS_TOKEN"])
+except Exception:
+    pass
 
 st.set_page_config(page_title="NSE Stock Dashboard", layout="wide")
 st.title("📈 NSE Momentum Dashboard")
@@ -19,7 +26,8 @@ data = fetch_prices()
 close = data["Close"]
 st.caption(f"Data through **{close.index[-1].date()}** · {close.shape[1]} stocks · cached ≤30 min")
 
-tab_scan, tab_port, tab_bt, tab_news = st.tabs(["🔍 Scanner", "💰 Virtual Portfolio", "🧪 Backtest", "📰 News"])
+tab_scan, tab_intra, tab_port, tab_bt, tab_news = st.tabs(
+    ["🔍 Scanner", "⚡ Intraday 15m", "💰 Virtual Portfolio", "🧪 Backtest", "📰 News"])
 
 # ---- scanner ----
 with tab_scan:
@@ -107,3 +115,35 @@ with tab_news:
     sym = st.selectbox("Stock", scan(data, weights=weights)["Symbol"], key="newssym")
     for it in news_for(sym) or [{"title": "No news found (yfinance free feed)", "publisher": "", "link": ""}]:
         st.markdown(f"- [{it['title']}]({it['link']}) — *{it['publisher']}*")
+
+
+# ---- intraday 15m model ----
+with tab_intra:
+    st.subheader("15-minute ML model (Upstox data)")
+    st.caption("Gradient-boosted regressor predicting the next ~2h (8 bars) return. "
+               "Trained walk-forward; entry at the next bar's open, trailing stop, flat by session close.")
+    try:
+        from upstox_data import load_15m
+        import model_15m as M
+        panel = load_15m()
+        c = panel["Close"]
+        st.caption(f"15m data through **{c.index[-1]:%Y-%m-%d %H:%M}** · {c.shape[1]} stocks · {c.shape[0]:,} bars")
+        if not os.path.exists(M.MODEL_PATH):
+            st.warning("No trained model yet — run `python model_15m.py` to train and save one.")
+        else:
+            k = st.slider("Top picks", 1, 20, 5)
+            picks = M.live_signals(panel, top_k=k)
+            st.dataframe(picks.style.format({"pred_%": "{:+.3f}", "price": "{:,.2f}"}),
+                         use_container_width=True)
+            sym = st.selectbox("Intraday chart", [t.replace(".NS", "") for t in c.columns],
+                               index=0, key="intrasym")
+            s15 = c[sym + ".NS"].dropna().tail(400)
+            f = go.Figure(go.Scatter(x=s15.index, y=s15, name=f"{sym} 15m"))
+            f.add_scatter(x=s15.index, y=s15.rolling(26).mean(), name="SMA26")
+            f.update_layout(height=380, margin=dict(t=20, b=20))
+            st.plotly_chart(f, use_container_width=True)
+    except FileNotFoundError:
+        st.info("No 15-minute cache found. Run `python upstox_data.py 2022-01-01` "
+                "with UPSTOX_ACCESS_TOKEN set to download it.")
+    except Exception as e:
+        st.error(f"Intraday tab unavailable: {e}")
