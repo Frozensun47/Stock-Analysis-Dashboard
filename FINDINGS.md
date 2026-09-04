@@ -89,3 +89,38 @@ The `statements` table is dated and could be made point-in-time, but annual
 coverage is only FY2022 through FY2026 — five report dates, about three usable
 inside TRAIN. Three annual rebalances cannot distinguish skill from luck against a
 21-point noise sd. Building it would produce a number, not evidence.
+
+## The broad-tilt candidate also failed (TEST not spent on it)
+
+The last untested idea was the one with external evidence behind it: a broad,
+low-turnover 12-1 momentum tilt (~20-40 names, quarterly hold, no stops), sized
+from published factor work (Fama-French 2017 EM momentum; Nifty200 Momentum 30,
+live since 2020) rather than from mining TRAIN. The motivation was structural
+rather than fitted — random-5 books average -24.9% alpha here, so concentration is
+a penalty, and breadth should have recovered the factor without the churn.
+
+It failed the TRAIN mechanism check in **all six cells**:
+
+| n | hold | TRAIN alpha | CAGR | bench | maxDD | cost drag |
+|---|---|---|---|---|---|---|
+| 20 | 120 | **-13.5** | +28.0% | +32.1% | -16.5% | 2.6% |
+| 30 | 120 | -19.8 | +26.0% | +32.1% | -13.4% | 2.9% |
+| 40 | 120 | -22.8 | +25.0% | +32.1% | -14.9% | 3.1% |
+| 20 | 60 | -23.4 | +24.9% | +32.1% | -12.9% | 4.9% |
+| 30 | 60 | -30.6 | +22.5% | +32.1% | -12.3% | 5.4% |
+| 40 | 60 | -35.3 | +21.0% | +32.1% | -11.4% | 5.9% |
+
+**TEST was not spent on it** — the pre-registration caught a bad candidate before
+it cost the split. That is the discipline working as designed.
+
+Two things worth keeping from the table: breadth does cut drawdown materially
+(-11% to -16% vs -19.8% for the 5-name book), and every arm is *absolutely*
+profitable (+21% to +28% CAGR) while still losing to buy-and-hold. In a market
+compounding at 32%, beating the basket is the hard part; making money is not.
+
+## Bottom line
+
+No strategy tested — 314 logged experiments — beats equal-weight buy-and-hold out
+of sample. The net-positive result is the passive basket: **+13.2% (+7.8% CAGR)**
+over TEST. That is the recommendation, and it is a real profit, just not one that
+came from stock selection.

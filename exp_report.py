@@ -19,7 +19,7 @@ def main():
         out = []
         for _, r in d.iterrows():
             out.append(
-                f"| {r['name']} | {r['split']} | {int(r['trades'])} | "
+                f"| {r['name']} | {r['split']} | {0 if r['trades'] != r['trades'] else int(r['trades'])} | "
                 f"{r['cost_drag']:.1f}% | {r['total_pct']:+.1f}% | {r['cagr']:+.1f}% | "
                 f"{r['bench_cagr']:+.1f}% | {r['alpha_total_pct']:+.1f}% | "
                 f"{r['sharpe']:.2f} | {r['max_dd']:.1f}% |")

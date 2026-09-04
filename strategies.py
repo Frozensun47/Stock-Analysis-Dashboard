@@ -114,3 +114,18 @@ REGISTRY = {
     "breakout near 52w high": breakout,
     "momentum/vol >SMA200": mom_lowvol,
 }
+
+
+def momentum_broad(data, i, n=30):
+    """Broad, low-turnover momentum tilt -- 12-1 lookback, ~30 names.
+
+    Parameters come from published factor evidence (Fama-French 2017 EM momentum;
+    Nifty200 Momentum 30, live since 2020), NOT from mining this repo's TRAIN
+    split. 12-1 momentum skips the most recent month to avoid short-term
+    reversal. Breadth is the point: random-5 books average -24.9% alpha here, so
+    concentration is a structural penalty, not an edge.
+    """
+    k = cache(data)
+    mom = (k.c.shift(21) / k.c.shift(252) - 1).iloc[i]   # 12-1, skip last month
+    up = k.c.iloc[i] > k.sma200.iloc[i]
+    return _top(mom, n, up)
