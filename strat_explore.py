@@ -192,7 +192,10 @@ def _quality_scores():
                 "cheap": 1 - _rank(col("priceToBook")),
             })
             # mean of AVAILABLE ranks — requiring all five leaves only 15 names
-            _QUAL["s"] = parts.mean(axis=1, skipna=True).dropna()
+            sc = parts.mean(axis=1, skipna=True).dropna()
+            # price columns carry the ".NS" suffix; fundamentals do not
+            sc.index = [t + ".NS" for t in sc.index]
+            _QUAL["s"] = sc
     return _QUAL["s"]
 
 

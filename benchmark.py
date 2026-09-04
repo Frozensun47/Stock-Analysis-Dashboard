@@ -148,7 +148,12 @@ def run(strategy, data, split, capital=CAPITAL, n_pos=N_POS, rebalance=REBALANCE
 
     # benchmark: hold the equal-weight universe over the identical window, one entry cost
     w = close.iloc[lo:hi + 1]
-    bh = (1 + w.pct_change().mean(axis=1).fillna(0)).cumprod()
+    # True buy-and-hold: buy the equal-weight basket on day one and never trade.
+    # (An earlier version cumprod'd the mean DAILY return, which is a daily-REBALANCED
+    # index -- a different, and here easier, bar. Names missing over the window are
+    # dropped rather than silently rebalanced into.)
+    _v = w.dropna(axis=1, how="any")
+    bh = (_v / _v.iloc[0]).mean(axis=1)
     bh_total = (bh.iloc[-1] - 1) * 100 - groww_cost(capital, capital * bh.iloc[-1]) / capital * 100
     bh_dd = float((bh / bh.cummax() - 1).min() * 100)
 
