@@ -7,5 +7,6 @@ PY=.venv/bin/python
 $PY bars_db.py sync 2          # 1-minute bars -> cache/bars.sqlite (yfinance 7d window)
 $PY news_db.py sync            # RSS news corpus -> cache/news.sqlite
 $PY fundamentals.py sync       # statements + ratios -> cache/fundamentals.sqlite
+$PY forward_test.py record  # dated picks -> cache/forward.sqlite (honest OOS evidence)
 [ -n "${AWS_ACCESS_KEY_ID:-}" ] && $PY storage.py push || true
 echo "daily sync complete: $(date)"

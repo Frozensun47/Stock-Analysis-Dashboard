@@ -66,3 +66,26 @@ one. For a Rs 2L account, a Nifty200 Momentum 30 / Alpha Low Vol 30 index fund
 delivers the same factor tilt at ~0.3% TER with no DP charges.
 
 The scanner remains useful as a screen. It should not be read as a return forecast.
+
+## What happens next: forward paper-testing
+
+TRAIN was mined across ~126 configurations and TEST is spent, so **no untouched
+historical window remains**. The only honest evidence left is data that did not
+exist when the rule was written.
+
+`forward_test.py` records dated picks every day (wired into `daily_sync.sh`) for
+three arms — the momentum rule, the equal-weight benchmark, and a random-5 control —
+and scores them only after the full 120-day horizon has elapsed. Pick rows are
+immutable and scoring never reads a price dated on or before the pick.
+
+    .venv/bin/python forward_test.py score
+
+First meaningful verdict: roughly 6 months of accrual. Until then the honest
+position is the one above — the passive basket is what has actually made money.
+
+### Why point-in-time fundamentals were not pursued
+
+The `statements` table is dated and could be made point-in-time, but annual
+coverage is only FY2022 through FY2026 — five report dates, about three usable
+inside TRAIN. Three annual rebalances cannot distinguish skill from luck against a
+21-point noise sd. Building it would produce a number, not evidence.
