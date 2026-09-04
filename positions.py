@@ -33,10 +33,18 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.getenv("POSITIONS_DB", os.path.join(HERE, "cache", "positions.sqlite"))
 
-# Defaults are deliberately conservative until the backtest says otherwise;
-# every open position stores the rule it was opened with.
-DEFAULT_RULE = {"stop_loss": 6.0, "trail": 4.0, "trail_arm": 3.0,
-                "take_profit": None, "max_hold": 15}
+# These defaults are exactly the "trail 4% / 20-session" rule from the exit grid
+# in README.md — the only rule family there with non-negative alpha. The trail
+# arms immediately (trail_arm 0) because that is the variant that was measured;
+# arming it later is untested. A 4% trail from entry already acts as the stop
+# loss, so a separate stop_loss would double up on an untested rule.
+#
+# What the grid actually says: no exit rule creates an edge, because the ENTRY
+# signal has none (see README). This one gives up ~0.56%/trade versus a plain
+# 20-day hold to cut the worst trade from -59.5% to -13.3%. That is the trade
+# worth making on a signal with no demonstrated edge.
+DEFAULT_RULE = {"stop_loss": None, "trail": 4.0, "trail_arm": 0.0,
+                "take_profit": None, "max_hold": 20}
 
 DDL = """
 CREATE TABLE IF NOT EXISTS positions (

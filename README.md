@@ -49,6 +49,68 @@ cp .env.example .env      # then paste your Upstox access token
 .venv/bin/streamlit run app.py
 ```
 
+## The Scanner's Buy % score does not work
+
+Tested over 5 years across 124 stocks, and verified twice by independent
+implementations. This is the most important result in the repo.
+
+**Rank-IC of Buy % against 20-day forward alpha: -0.004 (t = -0.20).** Alpha here
+means return minus what the equal-weight universe did that same day, which strips
+out market drift. Forward alpha by score bucket is not monotonic — the highest
+bucket is the *worst*:
+
+| Buy % | n | raw 20d | alpha 20d |
+|---|---|---|---|
+| <50 | 3,992 | +1.64% | -0.09% |
+| 50-60 | 1,203 | +1.97% | +0.04% |
+| 60-70 | 1,402 | +2.08% | +0.27% |
+| 70-80 | 1,111 | +1.66% | -0.02% |
+| **80+** | 352 | +1.78% | **-0.14%** |
+
+The controlled test settles it (1,160 trades, 20-day hold):
+
+| picks | gross/trade | net/trade |
+|---|---|---|
+| Top-5 by Buy % | +1.344% | +0.995% |
+| **Random 5** (30 trials) | **+1.509%** | **+1.159%** |
+| Bottom-5 by Buy % | +1.477% | +1.127% |
+
+**The lowest-scoring stocks beat the highest-scoring ones, and both lose to
+picking at random.** The scanner is a beta-delivery machine: its positive return
+is market drift, not selection. Over the last 10 months, buying its top-5 on each
+of 210 start dates returned +0.99% net versus **+2.24% for simply holding the
+universe** — profitable on 55% of start dates but beaten by doing nothing on 55%
+of them, with 2.3x the volatility and a -21.0% worst case against -3.3%.
+
+### The exit grid
+
+Same entries, 1,160 trades, 5 years, realistic costs:
+
+| rule | net/trade | alpha | win% | worst |
+|---|---|---|---|---|
+| hold 7d (the old default) | **-0.041%** | -0.143% | 48.9% | -28.4% |
+| hold 10d | +0.425% | +0.042% | 51.6% | -25.0% |
+| hold 20d | **+0.995%** | -0.143% | 53.9% | -59.5% |
+| **trail 4% / 20d** | +0.437% | **+0.054%** | 41.5% | **-13.3%** |
+| trail 2% / 20d | +0.123% | +0.021% | 36.9% | -9.4% |
+| take profit 2% / 20d | +0.105% | +0.011% | **83.3%** | -24.8% |
+
+**The old 7-session exit was the worst rule tested** — negative net at every
+account size, short enough for costs to eat the drift but too short to collect
+it. Trailing stops reduce net return at every width (the 15m model's finding
+holds on daily bars too), and a high win rate is a mirage: the 2% take-profit
+wins 83% of trades and nets +0.105%.
+
+What stops actually buy is **tail protection**. The default is now `trail 4% /
+20 sessions`: it gives up ~0.56%/trade against a plain 20-day hold to cut the
+worst trade from -59.5% to -13.3%. On Adani Green in January 2023 — which the
+scanner was scoring highly right into the Hindenburg collapse — it exits on day 3
+at **-6.0%** instead of riding to -59.5%.
+
+**Conclusion: do not trade this signal.** Holding the equal-weight universe beat
+it on return, hit rate and drawdown simultaneously. The exit rule exists to limit
+damage, not to create an edge — no exit rule can, because the entry has none.
+
 ## What the 15-minute model actually found
 
 Measured on 3.5 years of Upstox 15-minute bars (22,476 bars × 124 stocks),

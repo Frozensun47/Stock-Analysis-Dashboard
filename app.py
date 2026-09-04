@@ -37,6 +37,14 @@ st.caption(f"Data through **{close.index[-1].date()}** · {close.shape[1]} stock
 
 # ---- scanner ----
 with tab_scan:
+    st.warning(
+        "**The Buy % score does not predict returns.** Measured over 5 years across "
+        "124 stocks: rank-IC -0.004 (t = -0.20), and the 80+ bucket performs *worst* "
+        "of all. In a controlled test the bottom-5 scorers beat the top-5 (+1.48% vs "
+        "+1.34%) and both lost to picking 5 at random (+1.51%). The positive returns "
+        "below are market drift, not stock selection — over the same window holding "
+        "the whole universe returned +2.24% against this scanner's +0.99%. "
+        "Treat this ranking as a screen to read, not a recommendation to act on.")
     df = scan(data, weights=weights)
     c1, c2, c3 = st.columns(3)
     c1.metric("Top pick", df.iloc[0]["Symbol"], f'{df.iloc[0]["Buy %"]}% buy score')
