@@ -30,9 +30,10 @@ data = fetch_prices()
 close = data["Close"]
 st.caption(f"Data through **{close.index[-1].date()}** · {close.shape[1]} stocks · cached ≤30 min")
 
-tab_scan, tab_intra, tab_port, tab_bt, tab_news, tab_corpus, tab_fund = st.tabs(
-    ["🔍 Scanner", "⚡ 15m Model", "💰 Virtual Portfolio", "🧪 Backtest",
-     "📰 News", "🗞️ News Corpus", "📑 Fundamentals"])
+(tab_scan, tab_hold, tab_intra, tab_port, tab_bt,
+ tab_news, tab_corpus, tab_fund) = st.tabs(
+    ["🔍 Scanner", "📌 My Positions", "⚡ 15m Model", "💰 Virtual Portfolio",
+     "🧪 Backtest", "📰 News", "🗞️ News Corpus", "📑 Fundamentals"])
 
 # ---- scanner ----
 with tab_scan:
@@ -234,3 +235,78 @@ with tab_fund:
                 st.caption("Values in ₹ crore (raw values ÷ 10⁷); per-share items are scaled too.")
     except Exception as e:
         st.error(f"Fundamentals unavailable: {e}")
+
+
+# ---- real positions: mark what you bought, get a sell signal ----
+with tab_hold:
+    import positions as POS
+    st.subheader("Positions you actually hold")
+    st.caption("Mark a stock as purchased and it is tracked against a real exit rule — "
+               "stop loss, a trailing stop that arms only once you are up, take profit, "
+               "and a time limit. The same rule is what the backtest replays.")
+
+    rows = POS.check(close)
+    sells = [r for r in rows if r.get("action") == "SELL"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Open positions", len(rows))
+    c2.metric("Sell signals today", len(sells))
+    if rows:
+        inv = sum(r["qty"] * r["buy_price"] for r in rows)
+        now = sum(r["qty"] * r.get("last_price", r["buy_price"]) for r in rows)
+        c3.metric("Unrealised P&L", f"₹{now - inv:,.0f}",
+                  f"{(now / inv - 1) * 100:+.2f}%" if inv else None)
+
+    if sells:
+        st.error("**Sell signals:**\n" + "\n".join(
+            f"- **{r['symbol']}** ({r['pnl_pct']:+.2f}%) — {r['signal']}" for r in sells))
+
+    with st.expander("➕ Mark a stock as purchased", expanded=not rows):
+        df_scan = scan(data, weights=weights)
+        f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
+        psym = f1.selectbox("Stock", df_scan["Symbol"], key="possym")
+        live = float(df_scan[df_scan["Symbol"] == psym].iloc[0]["close"])
+        pprice = f2.number_input("Buy price ₹", 0.01, 1e6, live, key="posprice")
+        pqty = f3.number_input("Quantity", 1, 100000, 1, key="posqty")
+        pdate = f4.date_input("Buy date", close.index[-1].date(), key="posdate")
+        r1, r2, r3, r4 = st.columns(4)
+        rule = {
+            "stop_loss": r1.number_input("Stop loss %", 1.0, 30.0,
+                                         float(POS.DEFAULT_RULE["stop_loss"]), 0.5),
+            "trail": r2.number_input("Trailing stop %", 1.0, 20.0,
+                                     float(POS.DEFAULT_RULE["trail"]), 0.5),
+            "trail_arm": r3.number_input("Arm trail after +%", 0.0, 20.0,
+                                         float(POS.DEFAULT_RULE["trail_arm"]), 0.5),
+            "max_hold": int(r4.number_input("Max hold (sessions)", 1, 120,
+                                            int(POS.DEFAULT_RULE["max_hold"]))),
+            "take_profit": None,
+        }
+        if st.button("Track this purchase", type="primary"):
+            POS.add(psym, pqty, pprice, pdate, rule)
+            st.success(f"Tracking {psym} × {pqty} @ ₹{pprice:,.2f}")
+            st.rerun()
+
+    if rows:
+        st.subheader("Open")
+        st.dataframe(POS.summary(rows), use_container_width=True)
+        st.caption("`action` is the rule's verdict on today's close. "
+                   "A stop loss cannot protect against an overnight gap — "
+                   "Paytm's Feb-2024 gap blew through a 6% stop at -20%.")
+        cid, cpx, cbtn = st.columns([1, 1, 1])
+        pid = cid.selectbox("Position", [r["id"] for r in rows], key="closeid")
+        cur = next(r.get("last_price", r["buy_price"]) for r in rows if r["id"] == pid)
+        spx = cpx.number_input("Sell price ₹", 0.01, 1e6, float(cur), key="closepx")
+        if cbtn.button("Record sale"):
+            POS.close(pid, spx)
+            st.rerun()
+
+    con = POS.connect()
+    hist = pd.read_sql("SELECT symbol, qty, buy_price, buy_date, sell_price, sell_date, "
+                       "sell_reason FROM positions WHERE status='closed' "
+                       "ORDER BY sell_date DESC", con)
+    con.close()
+    if not hist.empty:
+        hist["ret %"] = (hist.sell_price / hist.buy_price - 1) * 100
+        st.subheader("Closed")
+        st.dataframe(hist.round(2), use_container_width=True)
+        st.write(f"Realised: **{hist['ret %'].mean():+.2f}%** average over "
+                 f"{len(hist)} trades · win rate **{(hist['ret %'] > 0).mean() * 100:.0f}%**")
