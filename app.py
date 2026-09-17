@@ -50,7 +50,7 @@ with tab_scan:
     c1.metric("Top pick", df.iloc[0]["Symbol"], f'{df.iloc[0]["Buy %"]}% buy score')
     c2.metric("Stocks scoring ≥ 70", int((df["Buy %"] >= 70).sum()))
     c3.metric("Positive 10d returns", int((df["ret10"] > 0).sum()))
-    st.dataframe(df, use_container_width=True, height=450)
+    st.dataframe(df, width="stretch", height=450)
 
     sym = st.selectbox("Chart", df["Symbol"])
     s = close[sym + ".NS"].dropna()
@@ -58,7 +58,7 @@ with tab_scan:
     fig.add_scatter(x=s.index, y=s.rolling(20).mean(), name="SMA20")
     fig.add_scatter(x=s.index, y=s.rolling(50).mean(), name="SMA50")
     fig.update_layout(height=380, margin=dict(t=20, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # ---- portfolio ----
 with tab_port:
@@ -92,10 +92,10 @@ with tab_port:
         st.subheader("Open positions (auto-sold after 7 trading days)")
         op = pd.DataFrame(p["open"])
         op["P&L %"] = (op.get("last_price", op["buy_price"]) / op["buy_price"] - 1) * 100
-        st.dataframe(op, use_container_width=True)
+        st.dataframe(op, width="stretch")
     if not closed.empty:
         st.subheader("Closed trades — strategy evaluation")
-        st.dataframe(closed.sort_values("sell_date", ascending=False), use_container_width=True)
+        st.dataframe(closed.sort_values("sell_date", ascending=False), width="stretch")
         st.write(f"Avg return: **{closed.ret.mean():.2f}%** · Win rate: **{(closed.ret>0).mean()*100:.0f}%**")
     if st.button("Reset portfolio to ₹10L"):
         save_port({"cash": 1_000_000.0, "open": [], "closed": []})
@@ -122,7 +122,7 @@ with tab_bt:
             st.write("**Return by score bucket** — does a higher score actually pay?")
             st.dataframe(tdf.groupby("bucket", observed=True).ret.agg(["count", "mean", lambda x: (x > 0).mean() * 100])
                          .rename(columns={"<lambda_0>": "win %"}).round(2))
-            st.dataframe(tdf.sort_values("date", ascending=False), use_container_width=True, height=300)
+            st.dataframe(tdf.sort_values("date", ascending=False), width="stretch", height=300)
 
 # ---- news ----
 with tab_news:
@@ -148,14 +148,14 @@ with tab_intra:
             k = st.slider("Top picks", 1, 20, 5)
             picks = M.live_signals(panel, top_k=k)
             st.dataframe(picks.style.format({"pred_%": "{:+.3f}", "price": "{:,.2f}"}),
-                         use_container_width=True)
+                         width="stretch")
             sym = st.selectbox("Intraday chart", [t.replace(".NS", "") for t in c.columns],
                                index=0, key="intrasym")
             s15 = c[sym + ".NS"].dropna().tail(400)
             f = go.Figure(go.Scatter(x=s15.index, y=s15, name=f"{sym} 15m"))
             f.add_scatter(x=s15.index, y=s15.rolling(26).mean(), name="SMA26")
             f.update_layout(height=380, margin=dict(t=20, b=20))
-            st.plotly_chart(f, use_container_width=True)
+            st.plotly_chart(f, width="stretch")
     except FileNotFoundError:
         st.info("No 15-minute cache found. Run `python upstox_data.py 2022-01-01` "
                 "with UPSTOX_ACCESS_TOKEN set to download it.")
@@ -201,7 +201,7 @@ with tab_corpus:
                     fg = go.Figure(go.Bar(x=daily.index, y=daily["mean"],
                                           marker_color=["#2e7d32" if v >= 0 else "#c62828" for v in daily["mean"]]))
                     fg.update_layout(height=220, margin=dict(t=10, b=10), yaxis_title="daily sentiment")
-                    st.plotly_chart(fg, use_container_width=True)
+                    st.plotly_chart(fg, width="stretch")
                 for _, r in arts.head(40).iterrows():
                     tone = "🟢" if r.sentiment > 0.1 else ("🔴" if r.sentiment < -0.1 else "⚪")
                     st.markdown(f"{tone} **[{r.title}]({r.link})** · *{r.source}* · "
@@ -239,7 +239,7 @@ with tab_fund:
             if df.empty:
                 st.info("No rows for that combination.")
             else:
-                st.dataframe((df / 1e7).round(1).rename_axis("₹ crore"), use_container_width=True, height=520)
+                st.dataframe((df / 1e7).round(1).rename_axis("₹ crore"), width="stretch", height=520)
                 st.caption("Values in ₹ crore (raw values ÷ 10⁷); per-share items are scaled too.")
     except Exception as e:
         st.error(f"Fundamentals unavailable: {e}")
@@ -277,11 +277,16 @@ with tab_hold:
         pqty = f3.number_input("Quantity", 1, 100000, 1, key="posqty")
         pdate = f4.date_input("Buy date", close.index[-1].date(), key="posdate")
         r1, r2, r3, r4 = st.columns(4)
+        # A None in DEFAULT_RULE means that exit is off by default (stops lost money
+        # at every width tested); the checkbox lets the user opt back in.
+        d_sl, d_tr = POS.DEFAULT_RULE["stop_loss"], POS.DEFAULT_RULE["trail"]
+        use_sl = r1.checkbox("Stop loss", d_sl is not None, key="use_sl")
+        use_tr = r2.checkbox("Trailing stop", d_tr is not None, key="use_tr")
         rule = {
-            "stop_loss": r1.number_input("Stop loss %", 1.0, 30.0,
-                                         float(POS.DEFAULT_RULE["stop_loss"]), 0.5),
-            "trail": r2.number_input("Trailing stop %", 1.0, 20.0,
-                                     float(POS.DEFAULT_RULE["trail"]), 0.5),
+            "stop_loss": r1.number_input("Stop loss %", 1.0, 30.0, float(d_sl or 6.0), 0.5,
+                                         disabled=not use_sl) if use_sl else None,
+            "trail": r2.number_input("Trailing stop %", 1.0, 20.0, float(d_tr or 4.0), 0.5,
+                                     disabled=not use_tr) if use_tr else None,
             "trail_arm": r3.number_input("Arm trail after +%", 0.0, 20.0,
                                          float(POS.DEFAULT_RULE["trail_arm"]), 0.5),
             "max_hold": int(r4.number_input("Max hold (sessions)", 1, 120,
@@ -295,7 +300,7 @@ with tab_hold:
 
     if rows:
         st.subheader("Open")
-        st.dataframe(POS.summary(rows), use_container_width=True)
+        st.dataframe(POS.summary(rows), width="stretch")
         st.caption("`action` is the rule's verdict on today's close. "
                    "A stop loss cannot protect against an overnight gap — "
                    "Paytm's Feb-2024 gap blew through a 6% stop at -20%.")
@@ -315,6 +320,6 @@ with tab_hold:
     if not hist.empty:
         hist["ret %"] = (hist.sell_price / hist.buy_price - 1) * 100
         st.subheader("Closed")
-        st.dataframe(hist.round(2), use_container_width=True)
+        st.dataframe(hist.round(2), width="stretch")
         st.write(f"Realised: **{hist['ret %'].mean():+.2f}%** average over "
                  f"{len(hist)} trades · win rate **{(hist['ret %'] > 0).mean() * 100:.0f}%**")
